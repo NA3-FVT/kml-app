@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>KML PRO APP</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body { font-family: Arial; margin:0; }
+#map { height: 60vh; }
+.panel { padding: 15px; background: #f4f4f4; }
+button { margin: 5px; padding: 10px; }
+</style>
+
+</head>
+
+<body>
+
+<div class="panel">
+
+<h3>🚗 KML PRO APP</h3>
+
+<b>Ruta:</b><br>
+<input type="file" id="rutaFile">
+<button onclick="scanQR('ruta')">📷 QR Ruta</button>
+<br><br>
+
+<b>Waypoints:</b><br>
+<input type="file" id="wpFile">
+<button onclick="scanQR('wp')">📷 QR Waypoints</button>
+
+<div id="qr-reader" style="width:250px;"></div>
+
+<br>
+Radio alerta (m):
+<input type="number" id="radio" value="100">
+
+<br>
+<button onclick="startApp()">▶ START</button>
+
+<p id="status">Esperando datos...</p>
+
+</div>
+
+<div id="map"></div>
+
+<script>
+
+// ---------- MAPA ----------
+let map = L.map('map').setView([41.3851, 2.1734], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let rutaLayer;
+let wpMarkers = [];
+let waypoints = [];
+let rutaCoords = [];
+let gpsMarker;
+let alertados = new Set();
+
+// ---------- PARSER KML ----------
+function parseKML(text, tipo) {
+
+    const xml = new DOMParser().parseFromString(text, "text/xml");
+    const placemarks = xml.getElementsByTagName("Placemark");
+
+    if (tipo === "wp") {
+        waypoints = [];
+        wpMarkers.forEach(m => map.removeLayer(m));
+        wpMarkers = [];
+    }
+
+    if (tipo === "ruta") {
+        rutaCoords = [];
+    }
+
+    for (let p of placemarks) {
+
+        let name = p.getElementsByTagName("name")[0]?.textContent || "WP";
+
+        // WAYPOINTS
+        let point = p.getElementsByTagName("Point");
+
+        if (point.length > 0 && tipo === "wp") {
+            let c = point[0].getElementsByTagName("coordinates")[0].textContent.trim();
+            let [lon, lat] = c.split(",");
+
+            let wp = {lat: parseFloat(lat), lon: parseFloat(lon), name};
+            waypoints.push(wp);
+
+            let m = L.marker([wp.lat, wp.lon]).addTo(map).bindPopup(name);
+            wpMarkers.push(m);
+        }
+
+        // RUTA
+        let line = p.getElementsByTagName("LineString");
+
+        if (line.length > 0 && tipo === "ruta") {
+
+            let coords = line[0].getElementsByTagName("coordinates")[0]
+                .textContent.trim().split(/\s+/);
+
+            coords.forEach(c => {
+                let [lon, lat] = c.split(",");
+                rutaCoords.push([parseFloat(lat), parseFloat(lon)]);
+            });
+        }
+    }
+
+    // dibujar ruta
+    if (tipo === "ruta" && rutaCoords.length > 0) {
+        if (rutaLayer) map.removeLayer(rutaLayer);
+
+        rutaLayer = L.polyline(rutaCoords, {color:'blue'}).addTo(map);
+    }
+
+    actualizarMapa();
+}
+
+// ---------- CENTRAR MAPA ----------
+function actualizarMapa() {
+
+    let layers = [...wpMarkers];
+
+    if (rutaLayer) layers.push(rutaLayer);
+
+    if (layers.length > 0) {
+        let group = new L.featureGroup(layers);
+        map.fitBounds(group.getBounds());
+    }
+}
+
+// ---------- CARGA ARCHIVO ----------
+document.getElementById("rutaFile").onchange = e => {
+    leerArchivo(e.target.files[0], "ruta");
+};
+
+document.getElementById("wpFile").onchange = e => {
+    leerArchivo(e.target.files[0], "wp");
+};
+
+function leerArchivo(file, tipo) {
+    let reader = new FileReader();
+
+    reader.onload = e => parseKML(e.target.result, tipo);
+
+    reader.readAsText(file);
+}
+
+// ---------- CARGA POR QR ----------
+async function loadKML(url, tipo) {
+
+    try {
+
+        // Drive
+        if (url.includes("file/d/")) {
+            let id = url.split("/file/d/")[1].split("/")[0];
+            url = `https://drive.google.com/uc?id=${id}`;
+        }
+
+        // MyMaps
+        if (url.includes("maps/d")) {
+            let id = url.split("mid=")[1].split("&")[0];
+            url = `https://www.google.com/maps/d/kml?mid=${id}&forcekml=1`;
+        }
+
+        let text = "";
+
+        try {
+            let res = await fetch(url);
+            text = await res.text();
+        } catch {}
+
+        if (!text.includes("<kml")) {
+            let proxy = "https://corsproxy.io/?";
+            let res = await fetch(proxy + encodeURIComponent(url));
+            text = await res.text();
+        }
+
+        if (!text.includes("<kml")) throw "ERROR";
+
+        parseKML(text, tipo);
+
+    } catch {
+        alert("❌ No se pudo cargar el KML");
+    }
+}
+
+// ---------- QR ----------
+function scanQR(tipo) {
+
+    const qr = new Html5Qrcode("qr-reader");
+
+    qr.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+
+        async (decodedText) => {
+
+            document.getElementById("status").innerText =
+                `QR leído (${tipo})`;
+
+            await loadKML(decodedText, tipo);
+
+            qr.stop();
+            document.getElementById("qr-reader").innerHTML = "";
+        }
+    );
+}
+
+// ---------- DISTANCIA ----------
+function distancia(lat1, lon1, lat2, lon2) {
+    let R = 6371000;
+    let dLat = (lat2-lat1)*Math.PI/180;
+    let dLon = (lon2-lon1)*Math.PI/180;
+
+    let a = Math.sin(dLat/2)**2 +
+        Math.cos(lat1*Math.PI/180) *
+        Math.cos(lat2*Math.PI/180) *
+        Math.sin(dLon/2)**2;
+
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ---------- START ----------
+function startApp() {
+
+    if (!waypoints.length) {
+        alert("Carga waypoints primero");
+        return;
+    }
+
+    const RADIO = parseInt(document.getElementById("radio").value);
+
+    navigator.geolocation.watchPosition(pos => {
+
+        let lat = pos.coords.latitude;
+        let lon = pos.coords.longitude;
+
+        if (gpsMarker) map.removeLayer(gpsMarker);
+        gpsMarker = L.marker([lat, lon]).addTo(map).bindPopup("Vehículo");
+
+        waypoints.forEach((wp, i) => {
+
+            let d = distancia(lat, lon, wp.lat, wp.lon);
+
+            if (d < RADIO && !alertados.has(i)) {
+                alertados.add(i);
+                beep(wp.name, d);
+            }
+        });
+
+    }, () => alert("Error GPS"), {enableHighAccuracy:true});
+}
+
+// ---------- ALERTA ----------
+function beep(name, dist) {
+
+    let audio = new Audio("https://www.soundjay.com/buttons/beep-07.wav");
+    audio.play();
+
+    document.getElementById("status").innerText =
+        `🔊 ${name} a ${Math.round(dist)} m`;
+}
+
+</script>
+
+</body>
+</html>
