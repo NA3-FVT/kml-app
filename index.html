@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>NAV PRO ORIENTADO</title>
+<title>NAV PRO FINAL OK</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -24,7 +24,7 @@ body { margin:0; font-family: Arial; }
 
 .hidden { display:none; }
 
-/* 🔥 coche centrado absoluto */
+/* ✅ coche fijo en el centro */
 #car-fixed {
     position: fixed;
     top: 50%;
@@ -43,15 +43,11 @@ body { margin:0; font-family: Arial; }
 
 <b>Ruta:</b><br>
 <input type="file" id="rutaFile">
-<button onclick="scanQR('ruta')">QR Ruta</button>
 
 <br><br>
 
 <b>Waypoints:</b><br>
 <input type="file" id="wpFile">
-<button onclick="scanQR('wp')">QR WP</button>
-
-<div id="qr-reader" style="width:220px;"></div>
 
 <br><br>
 
@@ -59,7 +55,7 @@ body { margin:0; font-family: Arial; }
 
 </div>
 
-<!-- 🚗 coche SIEMPRE fijo -->
+<!-- ✅ AQUÍ ESTÁ LA CORRECCIÓN -->
 <div id="car-fixed">
     <img src="https://raw.githubusercontent.com/NA3-FVT/kml-app/d3b54e75cc4399c043cde833e9a66b403c49dd82/car.png" width="50">
 </div>
@@ -69,42 +65,34 @@ body { margin:0; font-family: Arial; }
 <script>
 
 // ================= MAPA =================
-let map = L.map('map').setView([41.3851, 2.1734], 13);
-
-let mapPane = map.getPane('mapPane');
+let map = L.map('map').setView([41.3851,2.1734],13);
+let pane = map.getPane('mapPane');
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 // ================= VARIABLES =================
 let rutaLayer;
-let wpMarkers = [];
-let waypoints = [];
-let rutaCoords = [];
-let alertados = new Set();
+let wpMarkers=[];
+let waypoints=[];
+let rutaCoords=[];
 
-// ================= ROTACIÓN MAPA =================
+// ================= ROTAR MAPA =================
 function rotateMap(angle){
-    if(mapPane){
-        mapPane.style.transform = `rotate(${-angle}deg)`;
-        mapPane.style.transformOrigin = '50% 50%';
+    if(pane){
+        pane.style.transform = `rotate(${-angle}deg)`;
+        pane.style.transformOrigin = "50% 50%";
     }
 }
 
-// ================= PARSE KML =================
-function parseKML(text, tipo){
+// ================= PARSE =================
+function parseKML(text,tipo){
 
-    if(!text.includes("<kml")){
-        alert("❌ No es KML válido");
-        return;
-    }
-
-    const xml = new DOMParser().parseFromString(text, "text/xml");
-    const placemarks = xml.getElementsByTagName("Placemark");
+    const xml=new DOMParser().parseFromString(text,"text/xml");
+    const placemarks=xml.getElementsByTagName("Placemark");
 
     if(tipo==="wp"){
-        wpMarkers.forEach(m => map.removeLayer(m));
+        wpMarkers.forEach(m=>map.removeLayer(m));
         wpMarkers=[];
-        waypoints=[];
     }
 
     if(tipo==="ruta"){
@@ -114,138 +102,77 @@ function parseKML(text, tipo){
 
     for(let p of placemarks){
 
-        let name = p.getElementsByTagName("name")[0]?.textContent || "WP";
+        let name=p.getElementsByTagName("name")[0]?.textContent || "WP";
 
-        let point = p.getElementsByTagName("Point");
+        let point=p.getElementsByTagName("Point");
         if(point.length && tipo==="wp"){
 
-            let coords = point[0]
-                .getElementsByTagName("coordinates")[0]
-                .textContent.trim();
+            let c=point[0].getElementsByTagName("coordinates")[0].textContent.trim();
+            let [lon,lat]=c.split(",");
 
-            let [lon,lat] = coords.split(",");
-
-            let wp = {lat:parseFloat(lat), lon:parseFloat(lon), name};
-            waypoints.push(wp);
-
-            let m = L.marker([wp.lat, wp.lon]).addTo(map).bindPopup(name);
+            let m=L.marker([lat,lon]).addTo(map).bindPopup(name);
             wpMarkers.push(m);
         }
 
-        let line = p.getElementsByTagName("LineString");
+        let line=p.getElementsByTagName("LineString");
         if(line.length && tipo==="ruta"){
 
-            let coords = line[0]
-                .getElementsByTagName("coordinates")[0]
-                .textContent.trim()
-                .split(/\s+/);
+            let coords=line[0].getElementsByTagName("coordinates")[0]
+                        .textContent.trim().split(/\s+/);
 
             coords.forEach(c=>{
                 let [lon,lat]=c.split(",");
-                rutaCoords.push([parseFloat(lat),parseFloat(lon)]);
+                rutaCoords.push([lat,lon]);
             });
         }
     }
 
     if(rutaCoords.length){
-        rutaLayer = L.polyline(rutaCoords, {color:'blue'}).addTo(map);
+        rutaLayer=L.polyline(rutaCoords,{color:'blue'}).addTo(map);
         map.fitBounds(rutaLayer.getBounds());
     }
 }
 
-// ================= ARCHIVOS =================
-document.getElementById("rutaFile").onchange = e=>{
+// ================= FILE =================
+document.getElementById("rutaFile").onchange=e=>{
     let r=new FileReader();
-    r.onload = ev => parseKML(ev.target.result,"ruta");
+    r.onload=ev=>parseKML(ev.target.result,"ruta");
     r.readAsText(e.target.files[0]);
 };
 
-document.getElementById("wpFile").onchange = e=>{
+document.getElementById("wpFile").onchange=e=>{
     let r=new FileReader();
-    r.onload = ev => parseKML(ev.target.result,"wp");
+    r.onload=ev=>parseKML(ev.target.result,"wp");
     r.readAsText(e.target.files[0]);
 };
 
-// ================= QR =================
-function scanQR(tipo){
-
-    const qr = new Html5Qrcode("qr-reader");
-
-    qr.start(
-        {facingMode:"environment"},
-        {fps:10,qrbox:200},
-
-        async(decodedText)=>{
-            await loadKML(decodedText,tipo);
-            qr.stop();
-            document.getElementById("qr-reader").innerHTML="";
-        }
-    );
-}
-
-// ================= LOAD =================
-async function loadKML(url, tipo){
-
-    let res = await fetch("https://corsproxy.io/?"+encodeURIComponent(url));
-    let text = await res.text();
-
-    parseKML(text, tipo);
-}
-
-// ================= GPS =================
+// ================= START =================
 function startApp(){
 
     document.getElementById("panel").classList.add("hidden");
+
     setTimeout(()=>map.invalidateSize(),300);
 
     navigator.geolocation.watchPosition(
 
         pos=>{
 
-            let lat = pos.coords.latitude;
-            let lon = pos.coords.longitude;
+            let lat=pos.coords.latitude;
+            let lon=pos.coords.longitude;
 
-            let heading = pos.coords.heading || 0;
+            let heading=pos.coords.heading || 0;
 
-            // ✅ mover mapa SIEMPRE debajo del coche fijo
-            map.setView([lat, lon], map.getZoom());
+            // ✅ centrar SIEMPRE coche
+            map.setView([lat,lon],map.getZoom());
 
-            // ✅ rotar mapa según dirección
+            // ✅ rotar mapa
             rotateMap(heading);
-
-            // ✅ alertas waypoint
-            waypoints.forEach((wp,i)=>{
-                let d = distancia(lat,lon,wp.lat,wp.lon);
-                if(d < 100 && !alertados.has(i)){
-                    alertados.add(i);
-                    beep();
-                }
-            });
 
         },
 
         ()=>alert("GPS error"),
         {enableHighAccuracy:true}
     );
-}
-
-// ================= DISTANCIA =================
-function distancia(a,b,c,d){
-    let R=6371000;
-    let dLat=(c-a)*Math.PI/180;
-    let dLon=(d-b)*Math.PI/180;
-
-    let A=Math.sin(dLat/2)**2+
-        Math.cos(a*Math.PI/180)*
-        Math.cos(c*Math.PI/180)*
-        Math.sin(dLon/2)**2;
-
-    return R*2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
-}
-
-// ================= ALERTA =================
-function beep(){
-    new Audio("https://www.soundjay.com/buttons/beep-07.wav").play();
 }
 
 </script>
