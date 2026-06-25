@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>KML PRO APP FINAL</title>
+<title>KML PRO APP DEBUG</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -21,7 +21,7 @@ button { margin: 5px; padding: 10px; }
 
 <div class="panel">
 
-<h3>🚗 KML PRO APP FINAL</h3>
+<h3>🚗 KML PRO APP</h3>
 
 <b>Ruta:</b><br>
 <input type="file" id="rutaFile">
@@ -43,7 +43,7 @@ Radio alerta (m):
 <br>
 <button onclick="startApp()">▶ START</button>
 
-<p id="status">Esperando datos...</p>
+<p id="status">⚪ Esperando datos...</p>
 
 </div>
 
@@ -62,8 +62,13 @@ let rutaCoords = [];
 let gpsMarker;
 let alertados = new Set();
 
+let rutaLoaded = false;
+let wpLoaded = false;
+
 // ---------- PARSE KML ----------
 function parseKML(text, tipo) {
+
+    console.log("Parseando:", tipo);
 
     const xml = new DOMParser().parseFromString(text, "text/xml");
     const placemarks = xml.getElementsByTagName("Placemark");
@@ -109,10 +114,29 @@ function parseKML(text, tipo) {
         }
     }
 
+    if (tipo === "ruta") rutaLoaded = true;
+    if (tipo === "wp") wpLoaded = true;
+
+    actualizarEstado();
     dibujarMapa();
 }
 
-// ---------- CENTRAR MAPA ----------
+// ---------- ESTADO ----------
+function actualizarEstado() {
+
+    let msg = "";
+
+    if (!rutaLoaded && !wpLoaded) {
+        msg = "⚪ Esperando datos...";
+    } else {
+        if (rutaLoaded) msg += "✅ Ruta cargada ";
+        if (wpLoaded) msg += "✅ Waypoints cargados ";
+    }
+
+    document.getElementById("status").innerText = msg;
+}
+
+// ---------- MAPA ----------
 function dibujarMapa() {
 
     let layers = [...wpMarkers];
@@ -130,7 +154,7 @@ function dibujarMapa() {
     }
 }
 
-// ---------- CARGA ARCHIVO ----------
+// ---------- ARCHIVOS ----------
 document.getElementById("rutaFile").onchange = e => {
     leerArchivo(e.target.files[0], "ruta");
 };
@@ -145,18 +169,40 @@ function leerArchivo(file, tipo) {
     reader.readAsText(file);
 }
 
-// ---------- CARGA URL ----------
+// ---------- QR ----------
+function scanQR(tipo) {
+
+    const qr = new Html5Qrcode("qr-reader");
+
+    qr.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+
+        async (decodedText) => {
+
+            document.getElementById("status").innerText =
+                `📡 QR leído (${tipo})`;
+
+            await loadKML(decodedText, tipo);
+
+            qr.stop();
+            document.getElementById("qr-reader").innerHTML = "";
+        }
+    );
+}
+
+// ---------- LOAD URL ----------
 async function loadKML(url, tipo) {
 
     try {
 
-        // Drive
+        console.log("Cargando URL:", url);
+
         if (url.includes("file/d/")) {
             let id = url.split("/file/d/")[1].split("/")[0];
             url = `https://drive.google.com/uc?id=${id}`;
         }
 
-        // MyMaps
         if (url.includes("maps/d")) {
             let id = url.split("mid=")[1].split("&")[0];
             url = `https://www.google.com/maps/d/kml?mid=${id}&forcekml=1`;
@@ -179,33 +225,50 @@ async function loadKML(url, tipo) {
 
         parseKML(text, tipo);
 
-        document.getElementById("status").innerText =
-            `✅ ${tipo} cargado`;
-
     } catch {
-        alert("❌ No se pudo cargar el KML");
+        alert("❌ Error cargando KML");
     }
 }
 
-// ---------- QR ----------
-function scanQR(tipo) {
+// ---------- START ----------
+function startApp() {
 
-    const qr = new Html5Qrcode("qr-reader");
+    if (!wpLoaded) {
+        alert("Carga waypoints primero");
+        return;
+    }
 
-    qr.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
+    document.getElementById("status").innerText =
+        "🚗 GPS activo...";
 
-        async (decodedText) => {
+    const RADIO = parseInt(document.getElementById("radio").value);
 
-            document.getElementById("status").innerText =
-                `QR leído (${tipo})`;
+    navigator.geolocation.watchPosition(
 
-            await loadKML(decodedText, tipo);
+        (pos) => {
 
-            qr.stop();
-            document.getElementById("qr-reader").innerHTML = "";
-        }
+            let lat = pos.coords.latitude;
+            let lon = pos.coords.longitude;
+
+            if (gpsMarker) map.removeLayer(gpsMarker);
+            gpsMarker = L.marker([lat, lon]).addTo(map);
+
+            waypoints.forEach((wp, i) => {
+
+                let d = distancia(lat, lon, wp.lat, wp.lon);
+
+                if (d < RADIO && !alertados.has(i)) {
+                    alertados.add(i);
+                    beep(wp.name, d);
+                }
+            });
+        },
+
+        (err) => {
+            alert("GPS ERROR: permiso/ubicación");
+        },
+
+        { enableHighAccuracy: true }
     );
 }
 
@@ -221,59 +284,6 @@ function distancia(lat1, lon1, lat2, lon2) {
         Math.sin(dLon/2)**2;
 
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-// ---------- START ----------
-function startApp() {
-
-    if (!waypoints.length) {
-        alert("Carga waypoints primero");
-        return;
-    }
-
-    const RADIO = parseInt(document.getElementById("radio").value);
-
-    navigator.geolocation.watchPosition(
-
-        (pos) => {
-
-            let lat = pos.coords.latitude;
-            let lon = pos.coords.longitude;
-
-            if (gpsMarker) map.removeLayer(gpsMarker);
-            gpsMarker = L.marker([lat, lon])
-                .addTo(map)
-                .bindPopup("Vehículo");
-
-            waypoints.forEach((wp, i) => {
-
-                let d = distancia(lat, lon, wp.lat, wp.lon);
-
-                if (d < RADIO && !alertados.has(i)) {
-                    alertados.add(i);
-                    beep(wp.name, d);
-                }
-            });
-        },
-
-        (err) => {
-
-            let msg = "GPS ERROR: ";
-
-            if (err.code === 1) msg += "Permiso denegado";
-            else if (err.code === 2) msg += "Posición no disponible";
-            else if (err.code === 3) msg += "Timeout";
-            else msg += "Error desconocido";
-
-            alert(msg);
-        },
-
-        {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-        }
-    );
 }
 
 // ---------- ALERTA ----------
