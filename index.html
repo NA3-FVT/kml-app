@@ -2,10 +2,9 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>KML NAV PRO COMPLETO</title>
+<title>NAV PRO ORIENTADO</title>
 
-<!-- ✅ BIEN CARGADO -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 
@@ -24,7 +23,16 @@ body { margin:0; font-family: Arial; }
 }
 
 .hidden { display:none; }
-button { margin-top:5px; }
+
+/* 🔥 coche centrado absoluto */
+#car-fixed {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 1000;
+}
 </style>
 
 </head>
@@ -47,13 +55,13 @@ button { margin-top:5px; }
 
 <br><br>
 
-Radio (m):
-<input type="number" id="radio" value="100">
-
-<br><br>
-
 <button onclick="startApp()">START</button>
 
+</div>
+
+<!-- 🚗 coche SIEMPRE fijo -->
+<div id="car-fixed">
+    <img src="https://raw.githubusercontent.com/NA3-FVT/kml-app/d3b54e75cc4399c043cde833e9a66b403c49dd82/car.png" width="50">
 </div>
 
 <div id="map"></div>
@@ -63,6 +71,8 @@ Radio (m):
 // ================= MAPA =================
 let map = L.map('map').setView([41.3851, 2.1734], 13);
 
+let mapPane = map.getPane('mapPane');
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 // ================= VARIABLES =================
@@ -70,20 +80,15 @@ let rutaLayer;
 let wpMarkers = [];
 let waypoints = [];
 let rutaCoords = [];
-
-let gpsMarker;
 let alertados = new Set();
 
-// control navegación
-let firstFix = true;
-let followMode = true;
-
-// ================= ICONO COCHE =================
-const carIcon = L.icon({
-    iconUrl: "https://github.com/NA3-FVT/kml-app/blob/d3b54e75cc4399c043cde833e9a66b403c49dd82/car.png",
-    iconSize: [24,24],      // ✅ tamaño pequeño correcto
-    iconAnchor: [12,12]
-});
+// ================= ROTACIÓN MAPA =================
+function rotateMap(angle){
+    if(mapPane){
+        mapPane.style.transform = `rotate(${-angle}deg)`;
+        mapPane.style.transformOrigin = '50% 50%';
+    }
+}
 
 // ================= PARSE KML =================
 function parseKML(text, tipo){
@@ -96,7 +101,6 @@ function parseKML(text, tipo){
     const xml = new DOMParser().parseFromString(text, "text/xml");
     const placemarks = xml.getElementsByTagName("Placemark");
 
-    // limpiar
     if(tipo==="wp"){
         wpMarkers.forEach(m => map.removeLayer(m));
         wpMarkers=[];
@@ -112,7 +116,6 @@ function parseKML(text, tipo){
 
         let name = p.getElementsByTagName("name")[0]?.textContent || "WP";
 
-        // WAYPOINTS
         let point = p.getElementsByTagName("Point");
         if(point.length && tipo==="wp"){
 
@@ -125,14 +128,10 @@ function parseKML(text, tipo){
             let wp = {lat:parseFloat(lat), lon:parseFloat(lon), name};
             waypoints.push(wp);
 
-            let m = L.marker([wp.lat, wp.lon])
-                .addTo(map)
-                .bindPopup(name);
-
+            let m = L.marker([wp.lat, wp.lon]).addTo(map).bindPopup(name);
             wpMarkers.push(m);
         }
 
-        // RUTA
         let line = p.getElementsByTagName("LineString");
         if(line.length && tipo==="ruta"){
 
@@ -148,7 +147,6 @@ function parseKML(text, tipo){
         }
     }
 
-    // dibujar ruta
     if(rutaCoords.length){
         rutaLayer = L.polyline(rutaCoords, {color:'blue'}).addTo(map);
         map.fitBounds(rutaLayer.getBounds());
@@ -185,13 +183,8 @@ function scanQR(tipo){
     );
 }
 
-// ================= LOAD URL =================
+// ================= LOAD =================
 async function loadKML(url, tipo){
-
-    if(url.includes("file/d/")){
-        let id=url.split("/file/d/")[1].split("/")[0];
-        url=`https://drive.google.com/uc?id=${id}`;
-    }
 
     let res = await fetch("https://corsproxy.io/?"+encodeURIComponent(url));
     let text = await res.text();
@@ -205,8 +198,6 @@ function startApp(){
     document.getElementById("panel").classList.add("hidden");
     setTimeout(()=>map.invalidateSize(),300);
 
-    const RADIO = parseInt(document.getElementById("radio").value);
-
     navigator.geolocation.watchPosition(
 
         pos=>{
@@ -214,29 +205,20 @@ function startApp(){
             let lat = pos.coords.latitude;
             let lon = pos.coords.longitude;
 
-            // coche
-            if(!gpsMarker){
-                gpsMarker = L.marker([lat,lon],{icon:carIcon}).addTo(map);
+            let heading = pos.coords.heading || 0;
 
-                // ✅ zoom automático SOLO una vez
-                map.setView([lat,lon],17);
-                firstFix = false;
+            // ✅ mover mapa SIEMPRE debajo del coche fijo
+            map.setView([lat, lon], map.getZoom());
 
-            } else {
-                gpsMarker.setLatLng([lat,lon]);
-            }
+            // ✅ rotar mapa según dirección
+            rotateMap(heading);
 
-            // ✅ seguimiento solo si no has tocado el mapa
-            if(followMode && !firstFix){
-                map.setView([lat,lon], map.getZoom());
-            }
-
-            // alerta proximidad
+            // ✅ alertas waypoint
             waypoints.forEach((wp,i)=>{
                 let d = distancia(lat,lon,wp.lat,wp.lon);
-                if(d < RADIO && !alertados.has(i)){
+                if(d < 100 && !alertados.has(i)){
                     alertados.add(i);
-                    beep(wp.name, d);
+                    beep();
                 }
             });
 
@@ -262,18 +244,11 @@ function distancia(a,b,c,d){
 }
 
 // ================= ALERTA =================
-function beep(name,dist){
+function beep(){
     new Audio("https://www.soundjay.com/buttons/beep-07.wav").play();
-    console.log(name + " a " + dist + " m");
 }
-
-// ================= CONTROL ZOOM USUARIO =================
-map.on("zoomstart", ()=> followMode=false);
-map.on("dragstart", ()=> followMode=false);
 
 </script>
 
-</body>
-</html>
 </body>
 </html>
