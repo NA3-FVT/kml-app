@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>NAV PRO FULL CORRECTO</title>
+<title>KML NAV PRO FULL STABLE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -15,9 +15,8 @@ body { margin:0; font-family: Arial; }
 .hidden { display:none; }
 button { margin:5px; padding:8px; }
 
-/* ICONO COCHE */
 .car-icon {
-    font-size: 30px;
+    font-size: 32px;
     transform-origin: center;
 }
 </style>
@@ -27,7 +26,7 @@ button { margin:5px; padding:8px; }
 
 <div id="panel" class="panel">
 
-<h3>🚗 NAV PRO FULL</h3>
+<h3>🚗 NAV PRO FULL (STABLE)</h3>
 
 <b>Ruta:</b><br>
 <input type="file" id="rutaFile">
@@ -62,6 +61,20 @@ Radio (m):
 let map = L.map('map').setView([41.3851,2.1734],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+let rutaLayer;
+let wpMarkers = [];
+let waypoints = [];
+let rutaCoords = [];
+let gpsMarker;
+let alertados = new Set();
+
+let rutaLoaded = false;
+let wpLoaded = false;
+
+// ✅ NUEVAS VARIABLES (NO ROMPEN NADA)
+let firstFix = true;
+let followMode = true;
+
 // ================= ICONO COCHE =================
 const carIcon = L.divIcon({
     html: "<div id='car' class='car-icon'>🚗</div>",
@@ -76,18 +89,7 @@ function rotateCar(angle){
     }
 }
 
-// ================= VARIABLES =================
-let rutaLayer;
-let wpMarkers = [];
-let waypoints = [];
-let rutaCoords = [];
-let gpsMarker;
-let alertados = new Set();
-
-let rutaLoaded = false;
-let wpLoaded = false;
-
-// ================= PARSE =================
+// ================= PARSE KML =================
 function parseKML(text,tipo){
 
     if(!text.includes("<kml")){
@@ -98,59 +100,65 @@ function parseKML(text,tipo){
     const xml = new DOMParser().parseFromString(text,"text/xml");
     const placemarks = xml.getElementsByTagName("Placemark");
 
-    // LIMPIEZA
+    console.log("Placemark encontrados:", placemarks.length);
+
     if(tipo==="wp"){
-        waypoints = [];
+        waypoints=[];
         wpMarkers.forEach(m=>map.removeLayer(m));
-        wpMarkers = [];
-        wpLoaded = false;
+        wpMarkers=[];
+        wpLoaded=false;
     }
 
     if(tipo==="ruta"){
-        rutaCoords = [];
-        rutaLoaded = false;
+        rutaCoords=[];
+        rutaLoaded=false;
     }
 
     for(let p of placemarks){
 
         let name = p.getElementsByTagName("name")[0]?.textContent || "WP";
 
-        // WAYPOINT
         let point = p.getElementsByTagName("Point");
-        if(point.length>0 && tipo==="wp"){
 
+        if(point.length>0 && tipo==="wp"){
             let coord = point[0]
                 .getElementsByTagName("coordinates")[0]
                 .textContent.trim();
 
             let [lon,lat] = coord.split(",");
 
-            let wp = {lat:parseFloat(lat),lon:parseFloat(lon),name};
+            let wp = {
+                lat:parseFloat(lat),
+                lon:parseFloat(lon),
+                name:name
+            };
 
             waypoints.push(wp);
 
-            let m = L.marker([wp.lat,wp.lon]).addTo(map).bindPopup(name);
+            let m=L.marker([wp.lat,wp.lon])
+                .addTo(map)
+                .bindPopup(name);
+
             wpMarkers.push(m);
         }
 
-        // RUTA
         let line = p.getElementsByTagName("LineString");
-        if(line.length>0 && tipo==="ruta"){
 
-            let coords = line[0]
+        if(line.length>0 && tipo==="ruta"){
+            let coords=line[0]
                 .getElementsByTagName("coordinates")[0]
                 .textContent.trim()
                 .split(/\s+/);
 
             coords.forEach(c=>{
-                let [lon,lat] = c.split(",");
+                let [lon,lat]=c.split(",");
                 rutaCoords.push([parseFloat(lat),parseFloat(lon)]);
             });
         }
     }
 
-    if(tipo==="ruta" && rutaCoords.length>0) rutaLoaded = true;
-    if(tipo==="wp" && waypoints.length>0) wpLoaded = true;
+    if(tipo==="ruta" && rutaCoords.length>0) rutaLoaded=true;
+    if(tipo==="wp" && waypoints.length>0) wpLoaded=true;
 
     updateStatus();
     drawMap();
@@ -160,27 +168,31 @@ function parseKML(text,tipo){
 function updateStatus(){
 
     let msg="";
+
     if(rutaLoaded) msg+="✅ Ruta ";
     if(wpLoaded) msg+="✅ Waypoints ";
-    if(!rutaLoaded && !wpLoaded) msg="⚪ Esperando datos...";
+
+    if(!rutaLoaded && !wpLoaded){
+        msg="⚪ Esperando datos...";
+    }
 
     document.getElementById("status").innerText = msg;
 }
 
-// ================= MAP DRAW =================
+// ================= DIBUJO MAPA =================
 function drawMap(){
 
     if(rutaLayer) map.removeLayer(rutaLayer);
 
     if(rutaCoords.length){
-        rutaLayer = L.polyline(rutaCoords,{color:'blue'}).addTo(map);
+        rutaLayer=L.polyline(rutaCoords,{color:'blue'}).addTo(map);
     }
 
-    let layers = [...wpMarkers];
+    let layers=[...wpMarkers];
     if(rutaLayer) layers.push(rutaLayer);
 
     if(layers.length){
-        let group = new L.featureGroup(layers);
+        let group=new L.featureGroup(layers);
         map.fitBounds(group.getBounds());
     }
 }
@@ -192,11 +204,8 @@ function readFile(file,tipo){
     reader.readAsText(file);
 }
 
-document.getElementById("rutaFile").onchange =
-    e=>readFile(e.target.files[0],"ruta");
-
-document.getElementById("wpFile").onchange =
-    e=>readFile(e.target.files[0],"wp");
+document.getElementById("rutaFile").onchange=e=>readFile(e.target.files[0],"ruta");
+document.getElementById("wpFile").onchange=e=>readFile(e.target.files[0],"wp");
 
 // ================= QR =================
 function scanQR(tipo){
@@ -222,6 +231,8 @@ function scanQR(tipo){
 
 // ================= LOAD =================
 async function loadKML(url,tipo){
+
+    console.log("URL original:",url);
 
     if(url.includes("file/d/")){
         let id=url.split("/file/d/")[1].split("/")[0];
@@ -282,20 +293,26 @@ function startApp(){
 
             let lat=pos.coords.latitude;
             let lon=pos.coords.longitude;
-
-            let heading = pos.coords.heading || 0;
+            let heading=pos.coords.heading || 0;
 
             if(!gpsMarker){
-                gpsMarker = L.marker([lat,lon],{icon:carIcon}).addTo(map);
+                gpsMarker=L.marker([lat,lon],{icon:carIcon}).addTo(map);
             }else{
                 gpsMarker.setLatLng([lat,lon]);
             }
 
-            // SOLO ROTAMOS EL COCHE
             rotateCar(heading);
 
-            // MAPA ESTABLE + SEGUIMIENTO
-            map.setView([lat,lon],17);
+            // ✅ SOLO PRIMER FIX centra y hace zoom
+            if(firstFix){
+                map.setView([lat,lon],17);
+                firstFix=false;
+            }
+
+            // ✅ seguimiento pero sin bloquear zoom
+            if(followMode){
+                map.panTo([lat,lon]);
+            }
 
             waypoints.forEach((wp,i)=>{
 
@@ -309,16 +326,32 @@ function startApp(){
 
         },
 
-        err=>alert("GPS error"),
+        err=>{
+
+            let msg="GPS ERROR: ";
+
+            if(err.code===1) msg+="Permiso denegado";
+            else if(err.code===2) msg+="Sin señal";
+            else if(err.code===3) msg+="Timeout";
+
+            alert(msg);
+        },
 
         {enableHighAccuracy:true}
     );
 }
 
+// ✅ usuario controla zoom → desactiva seguimiento
+map.on("zoomstart", ()=> followMode=false);
+map.on("dragstart", ()=> followMode=false);
+
 // ================= ALERTA =================
 function alertar(name,dist){
+
     let audio=new Audio("https://www.soundjay.com/buttons/beep-07.wav");
     audio.play();
+
+    console.log(`${name} a ${dist} m`);
 }
 
 </script>
