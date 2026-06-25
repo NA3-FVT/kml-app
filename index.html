@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>KML NAV PRO FULL</title>
+<title>NAV PRO FULL CORRECTO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -14,6 +14,12 @@ body { margin:0; font-family: Arial; }
 .panel { padding: 10px; background: #f4f4f4; }
 .hidden { display:none; }
 button { margin:5px; padding:8px; }
+
+/* ICONO COCHE */
+.car-icon {
+    font-size: 30px;
+    transform-origin: center;
+}
 </style>
 </head>
 
@@ -56,6 +62,21 @@ Radio (m):
 let map = L.map('map').setView([41.3851,2.1734],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+// ================= ICONO COCHE =================
+const carIcon = L.divIcon({
+    html: "<div id='car' class='car-icon'>🚗</div>",
+    iconSize: [30,30],
+    className: ""
+});
+
+function rotateCar(angle){
+    const el = document.getElementById("car");
+    if(el){
+        el.style.transform = "rotate(" + angle + "deg)";
+    }
+}
+
+// ================= VARIABLES =================
 let rutaLayer;
 let wpMarkers = [];
 let waypoints = [];
@@ -77,6 +98,7 @@ function parseKML(text,tipo){
     const xml = new DOMParser().parseFromString(text,"text/xml");
     const placemarks = xml.getElementsByTagName("Placemark");
 
+    // LIMPIEZA
     if(tipo==="wp"){
         waypoints = [];
         wpMarkers.forEach(m=>map.removeLayer(m));
@@ -103,18 +125,11 @@ function parseKML(text,tipo){
 
             let [lon,lat] = coord.split(",");
 
-            let wp = {
-                lat:parseFloat(lat),
-                lon:parseFloat(lon),
-                name
-            };
+            let wp = {lat:parseFloat(lat),lon:parseFloat(lon),name};
 
             waypoints.push(wp);
 
-            let m = L.marker([wp.lat,wp.lon])
-                .addTo(map)
-                .bindPopup(name);
-
+            let m = L.marker([wp.lat,wp.lon]).addTo(map).bindPopup(name);
             wpMarkers.push(m);
         }
 
@@ -141,22 +156,18 @@ function parseKML(text,tipo){
     drawMap();
 }
 
-// ================= ESTADO =================
+// ================= STATUS =================
 function updateStatus(){
 
     let msg="";
-
     if(rutaLoaded) msg+="✅ Ruta ";
     if(wpLoaded) msg+="✅ Waypoints ";
-
-    if(!rutaLoaded && !wpLoaded){
-        msg="⚪ Esperando datos...";
-    }
+    if(!rutaLoaded && !wpLoaded) msg="⚪ Esperando datos...";
 
     document.getElementById("status").innerText = msg;
 }
 
-// ================= MAPA =================
+// ================= MAP DRAW =================
 function drawMap(){
 
     if(rutaLayer) map.removeLayer(rutaLayer);
@@ -174,7 +185,7 @@ function drawMap(){
     }
 }
 
-// ================= ARCHIVO =================
+// ================= ARCHIVOS =================
 function readFile(file,tipo){
     let reader=new FileReader();
     reader.onload=e=>parseKML(e.target.result,tipo);
@@ -187,7 +198,29 @@ document.getElementById("rutaFile").onchange =
 document.getElementById("wpFile").onchange =
     e=>readFile(e.target.files[0],"wp");
 
-// ================= LOAD URL =================
+// ================= QR =================
+function scanQR(tipo){
+
+    const qr=new Html5Qrcode("qr-reader");
+
+    qr.start(
+        {facingMode:"environment"},
+        {fps:10, qrbox:250},
+
+        async(decodedText)=>{
+
+            document.getElementById("status").innerText =
+                `📡 QR ${tipo}`;
+
+            await loadKML(decodedText,tipo);
+
+            qr.stop();
+            document.getElementById("qr-reader").innerHTML="";
+        }
+    );
+}
+
+// ================= LOAD =================
 async function loadKML(url,tipo){
 
     if(url.includes("file/d/")){
@@ -216,28 +249,6 @@ async function loadKML(url,tipo){
     parseKML(text,tipo);
 }
 
-// ================= QR =================
-function scanQR(tipo){
-
-    const qr=new Html5Qrcode("qr-reader");
-
-    qr.start(
-        {facingMode:"environment"},
-        {fps:10, qrbox:250},
-
-        async(decodedText)=>{
-
-            document.getElementById("status").innerText =
-                `📡 QR ${tipo}`;
-
-            await loadKML(decodedText,tipo);
-
-            qr.stop();
-            document.getElementById("qr-reader").innerHTML="";
-        }
-    );
-}
-
 // ================= DISTANCIA =================
 function distancia(a,b,c,d){
     let R=6371000;
@@ -251,7 +262,7 @@ function distancia(a,b,c,d){
     return R*2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
-// ================= START NAV =================
+// ================= START =================
 function startApp(){
 
     if(!wpLoaded){
@@ -259,13 +270,9 @@ function startApp(){
         return;
     }
 
-    // ocultar panel
     document.getElementById("panel").classList.add("hidden");
 
-    // 🔥 CLAVE: recalcular tamaño mapa
-    setTimeout(()=>{
-        map.invalidateSize();
-    },300);
+    setTimeout(()=>map.invalidateSize(),300);
 
     const RADIO=parseInt(document.getElementById("radio").value);
 
@@ -276,17 +283,19 @@ function startApp(){
             let lat=pos.coords.latitude;
             let lon=pos.coords.longitude;
 
+            let heading = pos.coords.heading || 0;
+
             if(!gpsMarker){
-                gpsMarker=L.marker([lat,lon]).addTo(map);
+                gpsMarker = L.marker([lat,lon],{icon:carIcon}).addTo(map);
             }else{
                 gpsMarker.setLatLng([lat,lon]);
             }
 
-            // 🔥 NAVEGACIÓN REAL
-            map.flyTo([lat,lon],17,{
-                animate:true,
-                duration:1
-            });
+            // SOLO ROTAMOS EL COCHE
+            rotateCar(heading);
+
+            // MAPA ESTABLE + SEGUIMIENTO
+            map.setView([lat,lon],17);
 
             waypoints.forEach((wp,i)=>{
 
@@ -296,14 +305,11 @@ function startApp(){
                     alertados.add(i);
                     alertar(wp.name,d);
                 }
-
             });
 
         },
 
-        err=>{
-            alert("GPS ERROR: permisos / ubicación");
-        },
+        err=>alert("GPS error"),
 
         {enableHighAccuracy:true}
     );
@@ -311,11 +317,8 @@ function startApp(){
 
 // ================= ALERTA =================
 function alertar(name,dist){
-
     let audio=new Audio("https://www.soundjay.com/buttons/beep-07.wav");
     audio.play();
-
-    console.log(`${name} a ${dist} m`);
 }
 
 </script>
