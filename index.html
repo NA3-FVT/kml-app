@@ -2,31 +2,36 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>KML NAV PRO FULL STABLE</title>
+<title>KML NAV PRO COMPLETO</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<!-- ✅ BIEN CARGADO -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <style>
 body { margin:0; font-family: Arial; }
 #map { height: 100vh; }
-.panel { padding: 10px; background: #f4f4f4; }
-.hidden { display:none; }
-button { margin:5px; padding:8px; }
 
-.car-icon {
-    font-size: 32px;
-    transform-origin: center;
+.panel {
+    position:absolute;
+    top:10px;
+    left:10px;
+    z-index:999;
+    background:#fff;
+    padding:10px;
+    border-radius:8px;
 }
+
+.hidden { display:none; }
+button { margin-top:5px; }
 </style>
+
 </head>
 
 <body>
 
 <div id="panel" class="panel">
-
-<h3>🚗 NAV PRO FULL (STABLE)</h3>
 
 <b>Ruta:</b><br>
 <input type="file" id="rutaFile">
@@ -38,18 +43,16 @@ button { margin:5px; padding:8px; }
 <input type="file" id="wpFile">
 <button onclick="scanQR('wp')">QR WP</button>
 
-<div id="qr-reader" style="width:250px;"></div>
+<div id="qr-reader" style="width:220px;"></div>
 
-<br>
+<br><br>
 
 Radio (m):
 <input type="number" id="radio" value="100">
 
-<br>
+<br><br>
 
-<button onclick="startApp()">START NAV</button>
-
-<p id="status">⚪ Esperando datos...</p>
+<button onclick="startApp()">START</button>
 
 </div>
 
@@ -58,94 +61,82 @@ Radio (m):
 <script>
 
 // ================= MAPA =================
-let map = L.map('map').setView([41.3851,2.1734],13);
+let map = L.map('map').setView([41.3851, 2.1734], 13);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+// ================= VARIABLES =================
 let rutaLayer;
 let wpMarkers = [];
 let waypoints = [];
 let rutaCoords = [];
+
 let gpsMarker;
 let alertados = new Set();
 
-let rutaLoaded = false;
-let wpLoaded = false;
-
-// ✅ NUEVAS VARIABLES (NO ROMPEN NADA)
+// control navegación
 let firstFix = true;
 let followMode = true;
 
 // ================= ICONO COCHE =================
-const carIcon = L.divIcon({
-    html: "<div id='car' class='car-icon'>🚗</div>",
-    iconSize: [30,30],
-    className: ""
+const carIcon = L.icon({
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/861/861512.png",
+    iconSize: [24,24],      // ✅ tamaño pequeño correcto
+    iconAnchor: [12,12]
 });
 
-function rotateCar(angle){
-    const el = document.getElementById("car");
-    if(el){
-        el.style.transform = "rotate(" + angle + "deg)";
-    }
-}
-
 // ================= PARSE KML =================
-function parseKML(text,tipo){
+function parseKML(text, tipo){
 
     if(!text.includes("<kml")){
         alert("❌ No es KML válido");
         return;
     }
 
-    const xml = new DOMParser().parseFromString(text,"text/xml");
+    const xml = new DOMParser().parseFromString(text, "text/xml");
     const placemarks = xml.getElementsByTagName("Placemark");
 
-    console.log("Placemark encontrados:", placemarks.length);
-
+    // limpiar
     if(tipo==="wp"){
-        waypoints=[];
-        wpMarkers.forEach(m=>map.removeLayer(m));
+        wpMarkers.forEach(m => map.removeLayer(m));
         wpMarkers=[];
-        wpLoaded=false;
+        waypoints=[];
     }
 
     if(tipo==="ruta"){
+        if(rutaLayer) map.removeLayer(rutaLayer);
         rutaCoords=[];
-        rutaLoaded=false;
     }
 
     for(let p of placemarks){
 
         let name = p.getElementsByTagName("name")[0]?.textContent || "WP";
 
+        // WAYPOINTS
         let point = p.getElementsByTagName("Point");
+        if(point.length && tipo==="wp"){
 
-        if(point.length>0 && tipo==="wp"){
-            let coord = point[0]
+            let coords = point[0]
                 .getElementsByTagName("coordinates")[0]
                 .textContent.trim();
 
-            let [lon,lat] = coord.split(",");
+            let [lon,lat] = coords.split(",");
 
-            let wp = {
-                lat:parseFloat(lat),
-                lon:parseFloat(lon),
-                name:name
-            };
-
+            let wp = {lat:parseFloat(lat), lon:parseFloat(lon), name};
             waypoints.push(wp);
 
-            let m=L.marker([wp.lat,wp.lon])
+            let m = L.marker([wp.lat, wp.lon])
                 .addTo(map)
                 .bindPopup(name);
 
             wpMarkers.push(m);
         }
 
+        // RUTA
         let line = p.getElementsByTagName("LineString");
+        if(line.length && tipo==="ruta"){
 
-        if(line.length>0 && tipo==="ruta"){
-            let coords=line[0]
+            let coords = line[0]
                 .getElementsByTagName("coordinates")[0]
                 .textContent.trim()
                 .split(/\s+/);
@@ -157,107 +148,103 @@ function parseKML(text,tipo){
         }
     }
 
-    if(tipo==="ruta" && rutaCoords.length>0) rutaLoaded=true;
-    if(tipo==="wp" && waypoints.length>0) wpLoaded=true;
-
-    updateStatus();
-    drawMap();
-}
-
-// ================= STATUS =================
-function updateStatus(){
-
-    let msg="";
-
-    if(rutaLoaded) msg+="✅ Ruta ";
-    if(wpLoaded) msg+="✅ Waypoints ";
-
-    if(!rutaLoaded && !wpLoaded){
-        msg="⚪ Esperando datos...";
-    }
-
-    document.getElementById("status").innerText = msg;
-}
-
-// ================= DIBUJO MAPA =================
-function drawMap(){
-
-    if(rutaLayer) map.removeLayer(rutaLayer);
-
+    // dibujar ruta
     if(rutaCoords.length){
-        rutaLayer=L.polyline(rutaCoords,{color:'blue'}).addTo(map);
-    }
-
-    let layers=[...wpMarkers];
-    if(rutaLayer) layers.push(rutaLayer);
-
-    if(layers.length){
-        let group=new L.featureGroup(layers);
-        map.fitBounds(group.getBounds());
+        rutaLayer = L.polyline(rutaCoords, {color:'blue'}).addTo(map);
+        map.fitBounds(rutaLayer.getBounds());
     }
 }
 
 // ================= ARCHIVOS =================
-function readFile(file,tipo){
-    let reader=new FileReader();
-    reader.onload=e=>parseKML(e.target.result,tipo);
-    reader.readAsText(file);
-}
+document.getElementById("rutaFile").onchange = e=>{
+    let r=new FileReader();
+    r.onload = ev => parseKML(ev.target.result,"ruta");
+    r.readAsText(e.target.files[0]);
+};
 
-document.getElementById("rutaFile").onchange=e=>readFile(e.target.files[0],"ruta");
-document.getElementById("wpFile").onchange=e=>readFile(e.target.files[0],"wp");
+document.getElementById("wpFile").onchange = e=>{
+    let r=new FileReader();
+    r.onload = ev => parseKML(ev.target.result,"wp");
+    r.readAsText(e.target.files[0]);
+};
 
 // ================= QR =================
 function scanQR(tipo){
 
-    const qr=new Html5Qrcode("qr-reader");
+    const qr = new Html5Qrcode("qr-reader");
 
     qr.start(
         {facingMode:"environment"},
-        {fps:10, qrbox:250},
+        {fps:10,qrbox:200},
 
         async(decodedText)=>{
-
-            document.getElementById("status").innerText =
-                `📡 QR ${tipo}`;
-
             await loadKML(decodedText,tipo);
-
             qr.stop();
             document.getElementById("qr-reader").innerHTML="";
         }
     );
 }
 
-// ================= LOAD =================
-async function loadKML(url,tipo){
-
-    console.log("URL original:",url);
+// ================= LOAD URL =================
+async function loadKML(url, tipo){
 
     if(url.includes("file/d/")){
         let id=url.split("/file/d/")[1].split("/")[0];
         url=`https://drive.google.com/uc?id=${id}`;
     }
 
-    if(url.includes("maps/d")){
-        let id=url.split("mid=")[1].split("&")[0];
-        url=`https://www.google.com/maps/d/kml?mid=${id}&forcekml=1`;
-    }
+    let res = await fetch("https://corsproxy.io/?"+encodeURIComponent(url));
+    let text = await res.text();
 
-    let text="";
+    parseKML(text, tipo);
+}
 
-    try{
-        let res=await fetch(url);
-        text=await res.text();
-    }catch{}
+// ================= GPS =================
+function startApp(){
 
-    if(!text.includes("<kml")){
-        let proxy="https://corsproxy.io/?";
-        let res=await fetch(proxy+encodeURIComponent(url));
-        text=await res.text();
-    }
+    document.getElementById("panel").classList.add("hidden");
+    setTimeout(()=>map.invalidateSize(),300);
 
-    parseKML(text,tipo);
+    const RADIO = parseInt(document.getElementById("radio").value);
+
+    navigator.geolocation.watchPosition(
+
+        pos=>{
+
+            let lat = pos.coords.latitude;
+            let lon = pos.coords.longitude;
+
+            // coche
+            if(!gpsMarker){
+                gpsMarker = L.marker([lat,lon],{icon:carIcon}).addTo(map);
+
+                // ✅ zoom automático SOLO una vez
+                map.setView([lat,lon],17);
+                firstFix = false;
+
+            } else {
+                gpsMarker.setLatLng([lat,lon]);
+            }
+
+            // ✅ seguimiento solo si no has tocado el mapa
+            if(followMode && !firstFix){
+                map.setView([lat,lon], map.getZoom());
+            }
+
+            // alerta proximidad
+            waypoints.forEach((wp,i)=>{
+                let d = distancia(lat,lon,wp.lat,wp.lon);
+                if(d < RADIO && !alertados.has(i)){
+                    alertados.add(i);
+                    beep(wp.name, d);
+                }
+            });
+
+        },
+
+        ()=>alert("GPS error"),
+        {enableHighAccuracy:true}
+    );
 }
 
 // ================= DISTANCIA =================
@@ -267,94 +254,26 @@ function distancia(a,b,c,d){
     let dLon=(d-b)*Math.PI/180;
 
     let A=Math.sin(dLat/2)**2+
-    Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
-    Math.sin(dLon/2)**2;
+        Math.cos(a*Math.PI/180)*
+        Math.cos(c*Math.PI/180)*
+        Math.sin(dLon/2)**2;
 
     return R*2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
-// ================= START =================
-function startApp(){
-
-    if(!wpLoaded){
-        alert("⚠️ Carga waypoints primero");
-        return;
-    }
-
-    document.getElementById("panel").classList.add("hidden");
-
-    setTimeout(()=>map.invalidateSize(),300);
-
-    const RADIO=parseInt(document.getElementById("radio").value);
-
-    navigator.geolocation.watchPosition(
-
-        pos=>{
-
-            let lat=pos.coords.latitude;
-            let lon=pos.coords.longitude;
-            let heading=pos.coords.heading || 0;
-
-            if(!gpsMarker){
-                gpsMarker=L.marker([lat,lon],{icon:carIcon}).addTo(map);
-            }else{
-                gpsMarker.setLatLng([lat,lon]);
-            }
-
-            rotateCar(heading);
-
-            // ✅ SOLO PRIMER FIX centra y hace zoom
-            if(firstFix){
-                map.setView([lat,lon],17);
-                firstFix=false;
-            }
-
-            // ✅ seguimiento pero sin bloquear zoom
-            if(followMode){
-                map.panTo([lat,lon]);
-            }
-
-            waypoints.forEach((wp,i)=>{
-
-                let d=distancia(lat,lon,wp.lat,wp.lon);
-
-                if(d<RADIO && !alertados.has(i)){
-                    alertados.add(i);
-                    alertar(wp.name,d);
-                }
-            });
-
-        },
-
-        err=>{
-
-            let msg="GPS ERROR: ";
-
-            if(err.code===1) msg+="Permiso denegado";
-            else if(err.code===2) msg+="Sin señal";
-            else if(err.code===3) msg+="Timeout";
-
-            alert(msg);
-        },
-
-        {enableHighAccuracy:true}
-    );
+// ================= ALERTA =================
+function beep(name,dist){
+    new Audio("https://www.soundjay.com/buttons/beep-07.wav").play();
+    console.log(name + " a " + dist + " m");
 }
 
-// ✅ usuario controla zoom → desactiva seguimiento
+// ================= CONTROL ZOOM USUARIO =================
 map.on("zoomstart", ()=> followMode=false);
 map.on("dragstart", ()=> followMode=false);
 
-// ================= ALERTA =================
-function alertar(name,dist){
-
-    let audio=new Audio("https://www.soundjay.com/buttons/beep-07.wav");
-    audio.play();
-
-    console.log(`${name} a ${dist} m`);
-}
-
 </script>
 
+</body>
+</html>
 </body>
 </html>
