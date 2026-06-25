@@ -134,27 +134,54 @@ function parseKML(text, tipo) {
 
 // ---------------- CARGA URL (CORREGIDO) ----------------
 async function loadKML(url, tipo) {
+
     try {
+        console.log("URL original:", url);
 
-        console.log("Cargando:", url);
+        // 🔹 1. Convertir si es Google Drive
+        if (url.includes("drive.google.com/file/d/")) {
+            let id = url.split("/file/d/")[1].split("/")[0];
+            url = `https://drive.google.com/uc?id=${id}`;
+        }
 
+        // 🔹 2. Convertir si es My Maps
+        if (url.includes("maps/d")) {
+            let id = url.split("mid=")[1].split("&")[0];
+            url = `https://www.google.com/maps/d/kml?mid=${id}&forcekml=1`;
+        }
+
+        console.log("URL convertida:", url);
+
+        // 🔹 3. Usar proxy (CLAVE)
         const proxy = "https://api.allorigins.win/raw?url=";
+        let finalURL = proxy + encodeURIComponent(url);
 
-        let res = await fetch(proxy + encodeURIComponent(url));
+        let res = await fetch(finalURL);
+
+        if (!res.ok) throw new Error("Fetch error");
 
         let text = await res.text();
 
-        console.log("Respuesta:", text.substring(0,200));
+        console.log("Respuesta:", text.substring(0,150));
 
+        // 🔴 VALIDACIÓN CRÍTICA
         if (!text.includes("<kml")) {
             throw new Error("No es KML válido");
         }
 
         parseKML(text, tipo);
 
+        document.getElementById("status").innerText =
+            `✅ ${tipo} cargado correctamente`;
+
     } catch (e) {
+
         console.error(e);
-        alert("❌ Error cargando KML");
+
+        document.getElementById("status").innerText =
+            "❌ Error cargando KML";
+
+        alert("Error: el link no devuelve un KML válido");
     }
 }
 
@@ -243,4 +270,5 @@ function alertar(wp, dist) {
 </script>
 
 </body>
+</html>
 </html>
