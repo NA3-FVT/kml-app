@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>KML PRO APP</title>
+<title>KML PRO APP FINAL</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -21,11 +21,12 @@ button { margin: 5px; padding: 10px; }
 
 <div class="panel">
 
-<h3>🚗 KML PRO APP</h3>
+<h3>🚗 KML PRO APP FINAL</h3>
 
 <b>Ruta:</b><br>
 <input type="file" id="rutaFile">
 <button onclick="scanQR('ruta')">📷 QR Ruta</button>
+
 <br><br>
 
 <b>Waypoints:</b><br>
@@ -35,6 +36,7 @@ button { margin: 5px; padding: 10px; }
 <div id="qr-reader" style="width:250px;"></div>
 
 <br>
+
 Radio alerta (m):
 <input type="number" id="radio" value="100">
 
@@ -60,7 +62,7 @@ let rutaCoords = [];
 let gpsMarker;
 let alertados = new Set();
 
-// ---------- PARSER KML ----------
+// ---------- PARSE KML ----------
 function parseKML(text, tipo) {
 
     const xml = new DOMParser().parseFromString(text, "text/xml");
@@ -80,7 +82,6 @@ function parseKML(text, tipo) {
 
         let name = p.getElementsByTagName("name")[0]?.textContent || "WP";
 
-        // WAYPOINTS
         let point = p.getElementsByTagName("Point");
 
         if (point.length > 0 && tipo === "wp") {
@@ -94,7 +95,6 @@ function parseKML(text, tipo) {
             wpMarkers.push(m);
         }
 
-        // RUTA
         let line = p.getElementsByTagName("LineString");
 
         if (line.length > 0 && tipo === "ruta") {
@@ -109,22 +109,20 @@ function parseKML(text, tipo) {
         }
     }
 
-    // dibujar ruta
-    if (tipo === "ruta" && rutaCoords.length > 0) {
-        if (rutaLayer) map.removeLayer(rutaLayer);
-
-        rutaLayer = L.polyline(rutaCoords, {color:'blue'}).addTo(map);
-    }
-
-    actualizarMapa();
+    dibujarMapa();
 }
 
 // ---------- CENTRAR MAPA ----------
-function actualizarMapa() {
+function dibujarMapa() {
 
     let layers = [...wpMarkers];
 
-    if (rutaLayer) layers.push(rutaLayer);
+    if (rutaLayer) map.removeLayer(rutaLayer);
+
+    if (rutaCoords.length > 0) {
+        rutaLayer = L.polyline(rutaCoords, {color:'blue'}).addTo(map);
+        layers.push(rutaLayer);
+    }
 
     if (layers.length > 0) {
         let group = new L.featureGroup(layers);
@@ -143,13 +141,11 @@ document.getElementById("wpFile").onchange = e => {
 
 function leerArchivo(file, tipo) {
     let reader = new FileReader();
-
     reader.onload = e => parseKML(e.target.result, tipo);
-
     reader.readAsText(file);
 }
 
-// ---------- CARGA POR QR ----------
+// ---------- CARGA URL ----------
 async function loadKML(url, tipo) {
 
     try {
@@ -182,6 +178,9 @@ async function loadKML(url, tipo) {
         if (!text.includes("<kml")) throw "ERROR";
 
         parseKML(text, tipo);
+
+        document.getElementById("status").innerText =
+            `✅ ${tipo} cargado`;
 
     } catch {
         alert("❌ No se pudo cargar el KML");
@@ -234,25 +233,47 @@ function startApp() {
 
     const RADIO = parseInt(document.getElementById("radio").value);
 
-    navigator.geolocation.watchPosition(pos => {
+    navigator.geolocation.watchPosition(
 
-        let lat = pos.coords.latitude;
-        let lon = pos.coords.longitude;
+        (pos) => {
 
-        if (gpsMarker) map.removeLayer(gpsMarker);
-        gpsMarker = L.marker([lat, lon]).addTo(map).bindPopup("Vehículo");
+            let lat = pos.coords.latitude;
+            let lon = pos.coords.longitude;
 
-        waypoints.forEach((wp, i) => {
+            if (gpsMarker) map.removeLayer(gpsMarker);
+            gpsMarker = L.marker([lat, lon])
+                .addTo(map)
+                .bindPopup("Vehículo");
 
-            let d = distancia(lat, lon, wp.lat, wp.lon);
+            waypoints.forEach((wp, i) => {
 
-            if (d < RADIO && !alertados.has(i)) {
-                alertados.add(i);
-                beep(wp.name, d);
-            }
-        });
+                let d = distancia(lat, lon, wp.lat, wp.lon);
 
-    }, () => alert("Error GPS"), {enableHighAccuracy:true});
+                if (d < RADIO && !alertados.has(i)) {
+                    alertados.add(i);
+                    beep(wp.name, d);
+                }
+            });
+        },
+
+        (err) => {
+
+            let msg = "GPS ERROR: ";
+
+            if (err.code === 1) msg += "Permiso denegado";
+            else if (err.code === 2) msg += "Posición no disponible";
+            else if (err.code === 3) msg += "Timeout";
+            else msg += "Error desconocido";
+
+            alert(msg);
+        },
+
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        }
+    );
 }
 
 // ---------- ALERTA ----------
